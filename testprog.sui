@@ -1,0 +1,52 @@
+import hello from "hello.sui";
+import other from "other.sui";
+cimport add from "add.c";
+
+type Vector {
+	a : int;
+	b : int;
+	c : int;
+}
+
+type Tuple <A, B, C> {
+	a : A;
+	b : B;
+	c : C;
+}
+
+type Node <T> {
+	a : *Node<T>;
+	b : T;
+}
+
+func add <T> (a : T, b : T) T {
+	return a + b;
+}
+
+func silly () int {
+	return 1;
+}
+
+func ovl (a : int) int {
+	return 1;
+}
+
+func ovl (a : float) int {
+	return 1;
+}
+
+func main (argc : int, argv : *byte[]) int {
+	str := "this is a string";
+	hex := 0xFFFF_00ab;
+	bin := 0b00_00_11_11;
+	flo := 0.00f;
+	fl2 := 1f;
+	dou := 0.0;
+	do2 := 1.0;
+	vec := {Vector: 1, 2, 3};
+	oth := ovl;
+	
+	//fstr := f"{str} middle string {hex}";
+	return 0; //this is a comment
+}
+//this line comment is at the end of the file
