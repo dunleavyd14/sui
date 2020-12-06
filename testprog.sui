@@ -14,11 +14,6 @@ type Tuple <A, B, C> {
 	c : C;
 }
 
-type Node <T> {
-	a : *Node<T>;
-	b : T;
-}
-
 func add <T> (a : T, b : T) T {
 	return a + b;
 }
@@ -44,6 +39,8 @@ func main (argc : int, argv : *byte[]) int {
 	dou := 0.0;
 	do2 := 1.0;
 	vec := {Vector: 1, 2, 3};
+	ints := [int[]: 1, 2, 3];
+	a := ints[1];
 	oth := ovl;
 	
 	//fstr := f"{str} middle string {hex}";

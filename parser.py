@@ -1,7 +1,7 @@
 import ast
 from lexer import TokenType as T
 from lexer import Token, Lexer
-from collections import ChainMap
+from colors import color
 
 class UnreachableException(Exception):
 	pass
@@ -10,16 +10,17 @@ class ParseException(Exception):
 	pass
 
 class Parser:
-	def __init__(self, tokens):
+	def __init__(self, tokens, fname=None):
 		self.tokens = tokens
 		self._tok_idx = 0
 		self.root = ast.Root()
+		self.fname = fname
 	
 	@staticmethod
 	def from_file(fname):
 		lex = Lexer.from_file(fname)
 		toks = [tok for tok in lex.tokenize() if tok.type not in [T.LINE_COMMENT]]
-		return Parser(toks)
+		return Parser(toks, fname=fname)
 
 	@staticmethod
 	def from_str(s):
@@ -28,8 +29,11 @@ class Parser:
 		print(toks)
 		return Parser(toks)
 
-
-
+	def error(self, msg):
+		fname = color(f"{self.fname}", "green")
+		tok = self.eat()
+		print(f"[{fname} {tok.line_no}:{tok.char_no}] {msg}")
+		exit()
 
 	def peek(self, lookahead=0):
 		if len(self.tokens) <= self._tok_idx + lookahead:
@@ -47,15 +51,21 @@ class Parser:
 	def expect(self, exp_type):
 		tok = self.eat()
 		if tok.type != exp_type:
-			raise ParseException(f"Expected {exp_type} but instead got {tok}")
+			self.error(f"Expected {exp_type} but instead got {tok}")
 		else:
 			return tok
 	
 	def parse(self):
-		if self.peek().type in (T.IMPORT, T.CIMPORT):
-			_import()
-		else:
-			pass
+		while self.peek().type in (T.IMPORT, T.CIMPORT):
+			self.imports()
+
+		while self.peek().type != T.EOF:
+			tok = self.peek()
+
+			if tok.type == T.FUNC:
+				self.func_defn()
+			elif tok.type == T.TYPE:
+				self.struct_defn()
 	
 	def imports(self):
 		imps = []
@@ -133,8 +143,9 @@ class Parser:
 			defn = self._concrete_func_defn()
 			self.root.concrete_funcs[defn.name, tuple(defn.args.values())] = \
 					defn
+			defn.check_types(self.root)
 		else:
-			raise ParseException("Unexpected token {self.peek(1)} while \
+			self.error("Unexpected token {self.peek(1)} while \
 					parsing function definition")
 
 	
@@ -177,7 +188,7 @@ class Parser:
 			self.expect(T.RIGHT_PAREN)
 
 		else:
-			raise ParseException(f"Unexpected token {self.peek()} \
+			self.error(f"Unexpected token {self.peek()} \
 					while parsing generic function definition")
 
 
@@ -185,7 +196,7 @@ class Parser:
 		print(args, return_type)
 
 		self.expect(T.LEFT_BRACE)
-		self.root.push_scope(args)
+		self.root.push_scope(args.keys())
 		statements = []
 		while self.peek().type != T.RIGHT_BRACE:
 			#need to parse other statements here
@@ -222,7 +233,7 @@ class Parser:
 			self.expect(T.RIGHT_PAREN)
 			
 		else:
-			raise ParseException(f"Unexpected token {self.peek()} \
+			self.error(f"Unexpected token {self.peek()} \
 					while parsing concrete function definition")
 
 		return_type = self.type()
@@ -248,14 +259,16 @@ class Parser:
 		self.expect(T.PERIOD)
 		self.expect(T.PERIOD)
 		end = self.expr()
-		stmt = self.statement()
+		block = self.block()
 
-		return ast.ForLoop(name, start, end, stmt)
+		return ast.ForLoop(name, start, end, block)
 
 	def while_loop(self):
 		self.expect(T.WHILE)
 		cond = self.expr()
-		stmt = self.statement()
+		block = self.block()
+
+		return ast.WhileLoop(cond, block)
 
 	
 	def block(self):
@@ -271,8 +284,10 @@ class Parser:
 		return ast.Block
 		
 	def declare_and_assign(self):
-		#TODO: change this to get L-value
-		var_name = self.expect(T.IDENTIFIER)
+		var_name = self.expect(T.IDENTIFIER).text
+		if self.root.var_exists(var_name):
+			self.error(f"Variable '{var_name}' already delcared")
+
 		self.expect(T.COLON)
 		if self.peek().type == T.EQUALS:
 			self.expect(T.EQUALS)
@@ -280,16 +295,24 @@ class Parser:
 			self.expect(T.SEMICOLON)
 
 			if expr is ast.NULL_PTR:
-				raise ParseException(f"Cannot infer type of null pointer")
-
-
-
+				self.error(f"Cannot infer type of null pointer")
+			else:
+				self.root.add_var(var_name)
+				return ast.DeclAssignment(var_name, expr)
 		else:
 			declared_type = self.type()
 			expr = self.expr()
+			self.root.add_var(var_name)
+			return ast.DeclAssignment(var_name, expr, decl_type=declared_type)
+	
+	def assign(self):
+		#get lvalue
+		pass
 
 	def return_statement(self):
 		self.expect(T.RETURN)
+		if self.peek().type == T.SEMICOLON:
+			expr = None
 		expr = self.expr()
 		self.expect(T.SEMICOLON)
 
@@ -415,16 +438,25 @@ class Parser:
 			rexpr = self.unary()
 			return ast.PointerUnaryExpr(op, rexpr)
 
-		return self.primary()
+		return self.array_access()
 
-	def func_call(self, variable):
-		#right now there aren't really facilities for higher order funcs
-		#so this is just an if statement, should really be while though
-		if isinstance(expr, ast.VariableExpr):
-			func_name = expr.tok.text
-			funcs = self.root.func_name_exists(func_name)
-			print(funcs)
+	def member_access(self):
+		expr = self.array_access()
 
+		if self.peek().type == T.PERIOD:
+			self.eat()
+			identifier = self.expect(T.IDENTIFIER)
+
+
+
+
+	def array_access(self):
+		expr = self.primary()
+
+		while self.peek().type == T.LEFT_BRACKET:
+			self.eat()
+			expr = ast.ArrayAccessExpr(expr, self.expr())
+			self.expect(T.RIGHT_BRACKET)
 
 		return expr
 
@@ -448,14 +480,13 @@ class Parser:
 		elif self.peek().type == T.IDENTIFIER:
 
 			tok = self.eat()
-			if tok.text in self.root.vars: #it's a variable
-				type_info = self.root.vars[tok.text]
+			if self.root.var_exists(tok.text): #it's a variable
 				return ast.VariableExpr(tok)
 			else:
 				funcs = self.root.func_name_exists(tok.text)
 
 				if not funcs: #meaning no match to any known identifier
-					raise ParseException(f"Undeclared identifier '{tok.text}'")
+					self.error(f"Undeclared identifier '{tok.text}'")
 				#TODO: check against possible overloads, check if generic etc
 				#just get the right functions, make sure the args are good then go
 
@@ -478,14 +509,26 @@ class Parser:
 
 			self.expect(T.RIGHT_BRACE)
 
-
 			return ast.CompoundLiteralExpr(type_info, members)
 
+		elif self.peek().type == T.LEFT_BRACKET:
+			self.eat()
+			type_info = self.type()
+			self.expect(T.COLON)
 
+			members = [self.expr()] #for now this basically asserts that array
+									#literals are nonempty
+
+			while self.peek().type != T.RIGHT_BRACKET:
+				self.expect(T.COMMA)
+				members.append(self.expr())
+
+			self.expect(T.RIGHT_BRACKET)
+
+			return ast.ArrayLiteralExpr(type_info, members)
 
 		else:
-			raise ParseException(f"Unexpected token {self.peek()} while parsing \
-					expr")
+			self.error(f"Unexpected token {self.peek()} while parsing expr")
 			
 	
 
@@ -515,15 +558,7 @@ class Parser:
 if __name__ == "__main__":
 	print(Parser.from_str("(4 + -3) * 5").expr())
 	parser = Parser.from_file("testprog.sui")
-	parser.imports()
-	parser.struct_defn()
-	parser.struct_defn()
-	parser.struct_defn()
-	parser.func_defn()
-	parser.func_defn()
-	parser.func_defn()
-	parser.func_defn()
-	parser.func_defn()
+	parser.parse()
 
 
 
