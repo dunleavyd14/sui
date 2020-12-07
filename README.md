@@ -2,8 +2,10 @@
 A statically typed programming langauge that compiles to C
 
 ## Install
-``$ git clone github.com/dunleavyd14/sui
-  $ pip3 install -r requirements.txt``
+```
+$ git clone github.com/dunleavyd14/sui
+$ pip3 install -r requirements.txt
+```
   
 ## Usage
 
