@@ -1,55 +1,40 @@
-import hello from "hello.sui";
-import other from "other.sui";
-cimport add from "add.c";
 
-type Vector {
+type Vector { //normal type
 	a : int;
 	b : int;
 	c : int;
 }
 
-type Tuple <A, B, C> {
+type Tuple <A, B, C> {//generic type
+
 	a : A;
 	b : B;
 	c : C;
-}
+} 
 
-func add <T> (a : T, b : T) T {
+func add <T> (a : T, b : T) T { //generic function
 	return a + b;
 }
 
-func sum (
-
-func silly () int {
-	return 1;
+func sum (a : Tuple<int, int, int>) int {
+	return a.a + a.b + a.c;
 }
 
-func ovl (a : int) int {
-	return 1;
+func sum (a : Vector) int {
+	s := a.a + a.b + a.c;
+	return s;
 }
 
-func ovl (a : float) int {
-	return 1;
-}
 
 func main (argc : int, argv : **byte) int {
-	str := "this is a string";
-	hex := 0xFFFF_00ab;
-	bin := 0b00_00_11_11;
-	flo := 0.00f;
-	fl2 := 1.f;
-	dou := 0.0;
-	do2 := 1.0;
-	vec := {Vector: 1, 2, 3};
-	ints := [int: 1, 2, 3];
-
-	tup := {Tuple<int, int, int>: 1, 2, 3};
-	tup2 := {Tuple<float, float, float>: 1.f, 2.f, 3.f};
-	a := add<int>(1, 2);
-	b := add<float>(1.f, 2.f);
-	//oth := ovl(1);
+	vec := {Vector: 1, 3, 5};
+	arr := [int: 2, 4, 6];
+	tup := {Tuple<int, int, int>: 1, 4, 9};
+	tup2 := {Tuple<int, float, bool>: 1, 2.f, true};
+	printf("Vector sum: %d \n", sum(vec));
+	printf("Tuple sum: %d \n", sum(tup));
 	
-	//fstr := f"{str} middle string {hex}";
-	return 0; //this is a comment
+	return 0;
 }
-//this line comment is at the end of the file
+
+

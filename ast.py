@@ -70,8 +70,8 @@ class TypeDefn:
 		return f"TypeDefn({self.name}{self.members})"
 	
 	def gen_code(self):
-		mems = [f"{v.gen_code()} {k}" for k, v in self.members.items()]
-		return f"typedef struct {{{'; '.join(mems)}}} {self.name};"
+		mems = [f"{v.gen_code()} {k};" for k, v in self.members.items()]
+		return f"typedef struct {{{' '.join(mems)}}} {self.name};"
 
 class GenericTypeDefn:
 	def __init__(self, name, gen_args, members):
@@ -87,13 +87,11 @@ class GenericTypeDefn:
 		if len(gen_args) != len(self.gen_args):
 			raise TypeError("Invalid number of arguments for generic type {self.name}")
 		type_map = TypeMap({TypeInfo(a.text) : b for a, b in zip(self.gen_args, gen_args)})
-		print("mems", self.members, type_map.dict)
 
 		conc_mems = {n : type_map[t] for n, t in self.members.items()}
 		
 		
 		defn = TypeDefn(f"{self.name}_{len(self.child_types)}", conc_mems)
-		print(defn)
 		self.child_types[gen_args] = defn
 		return defn
 
@@ -119,27 +117,6 @@ class Root:
 	def add_var(self, var_name):
 		self.vars[-1].add(var_name)
 	
-	def lookup_type_by_name(self, name):
-		impls = [gen.child_types for gen in self.generic_types.values()]
-
-		all_types = {}
-		for i in impls:
-			all_types.update(i)
-		
-		print("ALL", all_types)
-
-	def register_generic_func(self, generic):
-		pass
-
-	def register_concrete_func(self, func):
-		pass
-
-	def register_generic_type(self, func):
-		pass
-	
-	def register_type(self, type_defn):
-		pass
-	
 	def func_name_exists(self, name):
 		if name in self.generic_funcs:
 			return self.generic_funcs[name]
@@ -151,7 +128,11 @@ class Root:
 		type_defs = [t.gen_code() for t in self.concrete_types.values()]
 		func_defs = [f.gen_code() for f in self.concrete_funcs.values()]
 		
-		return "\n".join((*type_defs, *func_defs))
+		header = "#include <stdbool.h>\n#include <stdio.h>\ntypedef char byte;\n" \
+				 "typedef unsigned int uint;\n"
+
+
+		return header + "\n".join((*type_defs, *func_defs)) + "\n"
 
 class GenericFuncDefn:
 	def __init__(self, name, gen_args, args, return_type, statements):
@@ -168,7 +149,6 @@ class GenericFuncDefn:
 		type_map = TypeMap({TypeInfo(a.text) : b \
 						for a, b in zip(self.gen_args, gen_args)})
 		new_args = {k : type_map[v] for k, v in self.args.items()}
-		print("RETURN", self.return_type, type_map.dict)
 		return_type = type_map[self.return_type]
 
 		new_statements = deepcopy(self.statements)
@@ -177,7 +157,6 @@ class GenericFuncDefn:
 
 		defn = FuncDefn(self.name + str(len(self.impls)), new_args, \
 				return_type, new_statements)
-		print(gen_args)
 		self.impls[tuple(gen_args)] = defn
 		return defn
 
@@ -205,7 +184,6 @@ class FuncDefn:
 		if self.name == "main":
 			self.id = ""
 		args = [f"{v.gen_code()} {k}" for k, v in self.args.items()]
-		print("IN GEN_CODE", args)
 		top = f"{self.return_type.gen_code()} {self.name}{self.id} ({','.join(args)})"
 		return top + self.statements.gen_code()
 
@@ -237,6 +215,10 @@ class DeclAssignment:
 		return f"{self.var}:= {self.expr}"
 	
 	def gen_code(self):
+		if self.type_info.arr != ():
+			name = self.type_info.name
+			arrs = ["[]" for _ in self.type_info.arr]
+			return f"{name} {self.var}{''.join(arrs)} = {self.expr.gen_code()};" + "\n"
 		return f"{self.type_info.gen_code()} {self.var} = {self.expr.gen_code()};" + "\n"
 
 class WhileLoop:
@@ -428,7 +410,7 @@ class MathBinExpr:
 		return f"({self.lexpr} {self.op.text} {self.rexpr})"
 
 	def gen_code(self, tabs=0):
-		return f"{''    ''*tabs}{self.lexpr.gen_code()}{self.op}{self.rexpr.gen_code()}"
+		return f"{''    ''*tabs}{self.lexpr.gen_code()}{self.op.text}{self.rexpr.gen_code()}"
 
 class NumericalComparisonExpr:
 	def __init__(self, lexpr, op, rexpr):
@@ -592,7 +574,10 @@ class BitwiseUnaryExpr:
 class LiteralExpr:
 	def __init__(self, tok, type_name):
 		self.tok = tok
-		self.type_info = TypeInfo(type_name)
+		if type_name == "string":
+			self.type_info = TypeInfo("byte", indirection=1)
+		else:
+			self.type_info = TypeInfo(type_name)
 	
 	
 	def substitute(self, type_map):
@@ -642,7 +627,6 @@ class ArrayAccessExpr:
 
 	
 	def gen_code(self, tabs=0):
-		print(self.idx.gen_code)
 		return f"{self.expr.gen_code()}[{self.idx.gen_code()}]"
 		
 
@@ -665,11 +649,9 @@ class CompoundLiteralExpr:
 			raise TypeError(f"Can't make literal of type {self.type_info}")
 		
 		if self.type_info.name in scopes.root.generic_types:
-			print(self.type_info)
 			return
 		else:
 			defn_members = scopes.root.concrete_types[self.type_info.name].members
-			print(defn_members)
 
 		if len(self.members) != len(defn_members):
 			raise TypeError("Invalid number of members for type {self.type_info}")
@@ -731,10 +713,14 @@ class FunctionCallExpr:
 
 		arg_types = tuple(arg.type_info for arg in self.args)
 
-		func = scopes.root.concrete_funcs[self.func_name, arg_types]
-		self.type_info = func.return_type
+		self.func_defn = scopes.root.concrete_funcs[self.func_name, arg_types]
+		self.type_info = self.func_defn.return_type
 		
 
+	def gen_code(self):
+		args = [arg.gen_code() for arg in self.args]
+		name = self.func_defn.name + str(self.func_defn.id)
+		return f"{name}({','.join(args)})"
 
 class GenericFunctionCallExpr:
 	def __init__(self, func_defn, gen_args, args):
@@ -748,7 +734,6 @@ class GenericFunctionCallExpr:
 			a.substitute(type_map)
 
 	def check_types(self, scopes):
-		print(self.func_defn.impls)
 		for a in self.args:
 			a.check_types(scopes)
 		self.func_defn = self.func_defn.make_concrete_func(self.gen_args)
@@ -758,12 +743,52 @@ class GenericFunctionCallExpr:
 	def gen_code(self):
 		args = [arg.gen_code() for arg in self.args]
 		
-		return f"{self.type_info.gen_code()} {self.func_defn.name}({','.join(args)})"
+		return f"{self.func_defn.name}({','.join(args)})"
 
 
+class MemberAccessExpr:
+	def __init__(self, expr, identifier):
+		self.expr = expr
+		self.identifier = identifier
+	
+	def substitute(self, type_map):
+		self.expr.substitute(type_map)
+	
+	def check_types(self, scopes):
+		self.expr.check_types(scopes)
+		defn = scopes.root.concrete_types[self.expr.type_info.name]
+		mem_name = self.identifier.text
+		if mem_name not in defn.members:
+			raise TypeError(f"Invalid member '{mem_name}' for type {defn}")
 
+		self.type_info = defn.members[mem_name]
 
+	
+	def gen_code(self):
+		if self.expr.type_info.indirection == 0:
+			op = "."
+		elif self.expr.type_info.indirection == 1:
+			op = "->"
+		else:
+			return NotImplemented
+	
+		return f"{self.expr.gen_code()}{op}{self.identifier.text}"
 
+class PrintfExpr:
+	def __init__(self, args):
+		self.args = args
+	
+	def substitute(self, type_map):
+		for a in self.args:
+			a.substitute(type_map)
+	
+	def check_types(self, scopes):
+		for a in self.args:
+			a.check_types(scopes)
+	
+	def gen_code(self):
+		args = [a.gen_code() for a in self.args]
+		return f"printf({', '.join(args)})"
 
 
 

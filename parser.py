@@ -26,7 +26,6 @@ class Parser:
 	def from_str(s):
 		lex = Lexer(s)
 		toks = [tok for tok in lex.tokenize() if tok.type not in [T.LINE_COMMENT]]
-		print(toks)
 		return Parser(toks)
 
 	def error(self, msg):
@@ -98,7 +97,6 @@ class Parser:
 
 			self.expect(T.R_ANGLE_BRACKET)
 
-			print(gen_types)
 
 		arr_lens = []
 		while self.peek().type == T.LEFT_BRACKET:
@@ -143,7 +141,6 @@ class Parser:
 		
 		if len(generic_args) == 0:
 			defn = ast.TypeDefn(type_name, members)
-			print(defn.gen_code())
 			self.root.concrete_types[type_name] = defn
 
 			return defn
@@ -161,7 +158,6 @@ class Parser:
 			self.root.concrete_funcs[defn.name, tuple(defn.args.values())] = \
 					defn
 			defn.check_types(self.root)
-			print(defn.gen_code())
 		else:
 			self.error("Unexpected token {self.peek(1)} while \
 					parsing function definition")
@@ -211,7 +207,6 @@ class Parser:
 
 
 		return_type = self.type()
-		print("OTHER RETURN", args, return_type)
 
 		self.root.push_scope(args.keys())
 		statements = self.block()
@@ -248,7 +243,6 @@ class Parser:
 		else:
 			self.error(f"Unexpected token {self.peek()} \
 					while parsing concrete function definition")
-		print("before statements", args)
 		copy = args.copy()
 		return_type = self.type()
 
@@ -258,7 +252,6 @@ class Parser:
 		self.root.pop_scope()
 		self.root.pop_scope()
 
-		print("AFTER", args, copy)
 		return ast.FuncDefn(func_name, args, return_type, statements)
 
 
@@ -491,8 +484,15 @@ class Parser:
 		elif self.peek().type == T.IDENTIFIER:
 
 			tok = self.eat()
+			if tok.text == "printf":
+				return self.printf()
 			if self.root.var_exists(tok.text): #it's a variable
+				if self.peek().type == T.PERIOD:
+					self.eat()
+					identifier = self.expect(T.IDENTIFIER)
+					return ast.MemberAccessExpr(ast.VariableExpr(tok), identifier)
 				return ast.VariableExpr(tok)
+			
 			else:
 				funcs = self.root.func_name_exists(tok.text)
 
@@ -521,7 +521,6 @@ class Parser:
 				
 				if generic:
 					defn = self.root.generic_funcs[tok.text]
-					print("GEN_TYPES", gen_types)
 					return ast.GenericFunctionCallExpr(defn, gen_types, args)
 				return ast.FunctionCallExpr(tok.text, args)
 
@@ -544,8 +543,6 @@ class Parser:
 
 			self.expect(T.RIGHT_BRACE)
 
-			#check to see that types are valid
-			self.root.lookup_type_by_name(type_info.name)
 
 			return ast.CompoundLiteralExpr(type_info, members)
 
@@ -589,12 +586,20 @@ class Parser:
 			self.expect(T.SEMICOLON)
 			return ast.ExprAsStatement(expr)
 
-		# might be possible to just do else: expr_as_statement() here
-
+	
+	def printf(self):
+		self.expect(T.LEFT_PAREN)
+		args = [self.expr()]
+		
+		while self.peek().type != T.RIGHT_PAREN:
+			self.expect(T.COMMA)
+			args.append(self.expr())
+		
+		self.expect(T.RIGHT_PAREN)
+		return ast.PrintfExpr(args)
 
 
 if __name__ == "__main__":
-	print(Parser.from_str("(4 + -3) * 5").expr())
 	parser = Parser.from_file("testprog.sui")
 	parser.parse()
 	print(parser.root.gen_code())
