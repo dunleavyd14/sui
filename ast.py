@@ -272,7 +272,7 @@ class ForLoop:
 	def gen_code(self):
 		var_type = self.start.type_info.gen_code()
 		name = self.name
-		return f"for ({var_type} {name} = {self.start.gen_code()}; {name} < {self.end.gen_code()}; {name}++) {self.statement.gen_code()}"
+		return f"for ({var_type} {name} = {self.start.gen_code()}; {name} <= {self.end.gen_code()}; {name}++) {self.statement.gen_code()}"
 
 class IfStmt:
 	def __init__(self, cond, statement, else_stmt=None):
