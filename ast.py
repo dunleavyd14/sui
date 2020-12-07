@@ -147,6 +147,11 @@ class Root:
 			return [defn for (n, args), defn in self.concrete_funcs.items() \
 						if n == name]
 	
+	def gen_code(self):
+		type_defs = [t.gen_code() for t in self.concrete_types.values()]
+		func_defs = [f.gen_code() for f in self.concrete_funcs.values()]
+		
+		return "\n".join((*type_defs, *func_defs))
 
 class GenericFuncDefn:
 	def __init__(self, name, gen_args, args, return_type, statements):
@@ -158,16 +163,22 @@ class GenericFuncDefn:
 		self.impls = {}
 	
 	def make_concrete_func(self, gen_args):
-		type_map = TypeMap({a : b for a, b in zip(self.gen_args, gen_args)})
+		if tuple(gen_args) in self.impls: #check known implementations
+			return self.impls[tuple(gen_args)]
+		type_map = TypeMap({TypeInfo(a.text) : b \
+						for a, b in zip(self.gen_args, gen_args)})
 		new_args = {k : type_map[v] for k, v in self.args.items()}
-		return_type = TypeMap[self.return_type]
+		print("RETURN", self.return_type, type_map.dict)
+		return_type = type_map[self.return_type]
 
-		new_statements = deepcopy(statements)
+		new_statements = deepcopy(self.statements)
 
-		new_statements.substitute_types(type_map)
+		new_statements.substitute(type_map)
 
-		defn = FuncDefn(self.name, new_args, return_type, new_statements)
-		self.impls[gen_args] = defn
+		defn = FuncDefn(self.name + str(len(self.impls)), new_args, \
+				return_type, new_statements)
+		print(gen_args)
+		self.impls[tuple(gen_args)] = defn
 		return defn
 
 
@@ -594,14 +605,13 @@ class LiteralExpr:
 		return f"{self.tok.text}"
 	
 	def gen_code(self):
-		print("LITERAL GEN", self.tok.text)
 		return self.tok.text
 
 class VariableExpr:
 	def __init__(self, tok):
 		self.tok = tok
 	
-	def substiute(self, type_map):
+	def substitute(self, type_map):
 		pass
 
 	def check_types(self, scopes):
@@ -704,8 +714,11 @@ class ArrayLiteralExpr:
 		return f"{{ {','.join(mems)} }}"
 
 class FunctionCallExpr:
-	def __init__(self, func_defn, args):
-		self.func_defn = func_defn
+	def __init__(self, func_name, args):
+		self.func_name = func_name
+		self.func_defn = None #if this compiler was very smart, I might be able
+							  #to figure this out some of the time prior to true
+							  #type checking
 		self.args = args
 	
 	def substitute(self, type_map):
@@ -715,6 +728,11 @@ class FunctionCallExpr:
 	def check_types(self, scopes):
 		for a in self.args:
 			a.check_types(scopes)
+
+		arg_types = tuple(arg.type_info for arg in self.args)
+
+		func = scopes.root.concrete_funcs[self.func_name, arg_types]
+		self.type_info = func.return_type
 		
 
 
@@ -730,8 +748,19 @@ class GenericFunctionCallExpr:
 			a.substitute(type_map)
 
 	def check_types(self, scopes):
+		print(self.func_defn.impls)
 		for a in self.args:
 			a.check_types(scopes)
+		self.func_defn = self.func_defn.make_concrete_func(self.gen_args)
+
+		self.type_info = self.func_defn.return_type
+	
+	def gen_code(self):
+		args = [arg.gen_code() for arg in self.args]
+		
+		return f"{self.type_info.gen_code()} {self.func_defn.name}({','.join(args)})"
+
+
 
 
 

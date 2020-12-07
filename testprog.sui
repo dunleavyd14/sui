@@ -18,6 +18,8 @@ func add <T> (a : T, b : T) T {
 	return a + b;
 }
 
+func sum (
+
 func silly () int {
 	return 1;
 }
@@ -41,8 +43,10 @@ func main (argc : int, argv : **byte) int {
 	vec := {Vector: 1, 2, 3};
 	ints := [int: 1, 2, 3];
 
-	typ := {Tuple<int, int, int>: 1, 2, 3};
-	a := ints[1];
+	tup := {Tuple<int, int, int>: 1, 2, 3};
+	tup2 := {Tuple<float, float, float>: 1.f, 2.f, 3.f};
+	a := add<int>(1, 2);
+	b := add<float>(1.f, 2.f);
 	//oth := ovl(1);
 	
 	//fstr := f"{str} middle string {hex}";

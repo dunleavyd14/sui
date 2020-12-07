@@ -211,7 +211,7 @@ class Parser:
 
 
 		return_type = self.type()
-		print(args, return_type)
+		print("OTHER RETURN", args, return_type)
 
 		self.root.push_scope(args.keys())
 		statements = self.block()
@@ -502,6 +502,7 @@ class Parser:
 				generic = False
 				gen_types = []
 				if self.peek().type == T.L_ANGLE_BRACKET: #func is generic
+					generic = True
 					self.eat()
 					gen_types = [self.type()]
 					while self.peek().type != T.R_ANGLE_BRACKET:
@@ -514,13 +515,15 @@ class Parser:
 				args = [self.expr()]
 				while self.peek().type != T.RIGHT_PAREN:
 					self.expect(T.COMMA)
-					gen_types.append(self.expr())
+					args.append(self.expr())
 
 				self.expect(T.RIGHT_PAREN)
 				
 				if generic:
 					defn = self.root.generic_funcs[tok.text]
-					return ast.GenericFunctionCallExpr(defn, 
+					print("GEN_TYPES", gen_types)
+					return ast.GenericFunctionCallExpr(defn, gen_types, args)
+				return ast.FunctionCallExpr(tok.text, args)
 
 
 		elif self.peek().type == T.LEFT_PAREN:
@@ -594,7 +597,7 @@ if __name__ == "__main__":
 	print(Parser.from_str("(4 + -3) * 5").expr())
 	parser = Parser.from_file("testprog.sui")
 	parser.parse()
-	print(parser.root.concrete_types)
+	print(parser.root.gen_code())
 
 
 
