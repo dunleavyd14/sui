@@ -91,11 +91,14 @@ class Parser:
 		if self.peek().type == T.L_ANGLE_BRACKET:
 			generic = True
 			self.eat()
-			gen_types = []
+			gen_types = [self.type()]
 			while self.peek().type != T.R_ANGLE_BRACKET:
+				self.expect(T.COMMA)
 				gen_types.append(self.type())
 
 			self.expect(T.R_ANGLE_BRACKET)
+
+			print(gen_types)
 
 		arr_lens = []
 		while self.peek().type == T.LEFT_BRACKET:
@@ -104,13 +107,17 @@ class Parser:
 			arr_lens.append(-1)
 
 		if generic:
-			pass
+			gen_type_defn = self.root.generic_types[type_name]
+			concrete_type_defn = gen_type_defn.concrete_type_def(gen_types)
+			self.root.concrete_types[concrete_type_defn.name] = concrete_type_defn
+
+			return ast.TypeInfo(concrete_type_defn.name, indirection, tuple(arr_lens))
 
 		return ast.TypeInfo(type_name, indirection, tuple(arr_lens))
 
 	def struct_defn(self):
 		self.expect(T.TYPE)
-		type_name = self.expect(T.IDENTIFIER)
+		type_name = self.expect(T.IDENTIFIER).text
 		generic_args = []
 		if self.peek().type == T.L_ANGLE_BRACKET:
 			self.eat()
@@ -126,13 +133,23 @@ class Parser:
 
 		members = {}
 		while self.peek().type != T.RIGHT_BRACE:
-			field_name = self.expect(T.IDENTIFIER)
+			field_name = self.expect(T.IDENTIFIER).text
 			self.expect(T.COLON)
 			type_info = self.type()
 			self.expect(T.SEMICOLON)
 			members[field_name] = type_info
 
 		self.expect(T.RIGHT_BRACE)
+		
+		if len(generic_args) == 0:
+			defn = ast.TypeDefn(type_name, members)
+			print(defn.gen_code())
+			self.root.concrete_types[type_name] = defn
+
+			return defn
+		else:
+			defn = ast.GenericTypeDefn(type_name, generic_args, members)
+			self.root.generic_types[type_name] = defn
 	
 	def func_defn(self):
 		self.expect(T.FUNC)
@@ -144,6 +161,7 @@ class Parser:
 			self.root.concrete_funcs[defn.name, tuple(defn.args.values())] = \
 					defn
 			defn.check_types(self.root)
+			print(defn.gen_code())
 		else:
 			self.error("Unexpected token {self.peek(1)} while \
 					parsing function definition")
@@ -195,13 +213,8 @@ class Parser:
 		return_type = self.type()
 		print(args, return_type)
 
-		self.expect(T.LEFT_BRACE)
 		self.root.push_scope(args.keys())
-		statements = []
-		while self.peek().type != T.RIGHT_BRACE:
-			#need to parse other statements here
-			statements.append(self.statement())
-		self.expect(T.RIGHT_BRACE)
+		statements = self.block()
 		self.root.pop_scope()
 
 		return ast.GenericFuncDefn(func_name, generic_args, \
@@ -235,19 +248,17 @@ class Parser:
 		else:
 			self.error(f"Unexpected token {self.peek()} \
 					while parsing concrete function definition")
-
+		print("before statements", args)
+		copy = args.copy()
 		return_type = self.type()
 
-		self.expect(T.LEFT_BRACE)
 		self.root.push_scope(args)
-
-		statements = []
-		while self.peek().type != T.RIGHT_BRACE:
-			#need to parse other statements here
-			statements.append(self.statement())
-		self.expect(T.RIGHT_BRACE)
+		self.root.push_scope()
+		statements = self.block()
+		self.root.pop_scope()
 		self.root.pop_scope()
 
+		print("AFTER", args, copy)
 		return ast.FuncDefn(func_name, args, return_type, statements)
 
 
@@ -281,7 +292,7 @@ class Parser:
 		self.expect(T.RIGHT_BRACE)
 		self.root.pop_scope()
 
-		return ast.Block
+		return ast.Block(stmts)
 		
 	def declare_and_assign(self):
 		var_name = self.expect(T.IDENTIFIER).text
@@ -487,8 +498,29 @@ class Parser:
 
 				if not funcs: #meaning no match to any known identifier
 					self.error(f"Undeclared identifier '{tok.text}'")
-				#TODO: check against possible overloads, check if generic etc
-				#just get the right functions, make sure the args are good then go
+
+				generic = False
+				gen_types = []
+				if self.peek().type == T.L_ANGLE_BRACKET: #func is generic
+					self.eat()
+					gen_types = [self.type()]
+					while self.peek().type != T.R_ANGLE_BRACKET:
+						self.expect(T.COMMA)
+						gen_types.append(self.type())
+
+					self.expect(T.R_ANGLE_BRACKET)
+
+				self.expect(T.LEFT_PAREN)
+				args = [self.expr()]
+				while self.peek().type != T.RIGHT_PAREN:
+					self.expect(T.COMMA)
+					gen_types.append(self.expr())
+
+				self.expect(T.RIGHT_PAREN)
+				
+				if generic:
+					defn = self.root.generic_funcs[tok.text]
+					return ast.GenericFunctionCallExpr(defn, 
 
 
 		elif self.peek().type == T.LEFT_PAREN:
@@ -508,6 +540,9 @@ class Parser:
 				members.append(self.expr())
 
 			self.expect(T.RIGHT_BRACE)
+
+			#check to see that types are valid
+			self.root.lookup_type_by_name(type_info.name)
 
 			return ast.CompoundLiteralExpr(type_info, members)
 
@@ -559,6 +594,7 @@ if __name__ == "__main__":
 	print(Parser.from_str("(4 + -3) * 5").expr())
 	parser = Parser.from_file("testprog.sui")
 	parser.parse()
+	print(parser.root.concrete_types)
 
 
 

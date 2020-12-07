@@ -1,10 +1,10 @@
 from collections import ChainMap
-
+from copy import deepcopy
 NULL_PTR = "__NULL_PTR__"
 
 class TypeMap:
-	def __init__(self, func, **kwargs):
-		self.dict = kwargs
+	def __init__(self, d):
+		self.dict = d
 	
 	def __getitem__(self, key):
 		if key in self.dict:
@@ -13,16 +13,19 @@ class TypeMap:
 			return key
 
 class TypeInfo:
-	def __init__(self, name, indirection=0, arr=()):
+	def __init__(self, name, indirection=0, arr=(), gen_args=()):
 		self.name = name
 		self.indirection = indirection
 		self.arr = arr
+		self.gen_args = gen_args
 	
 	def addr_of(self):
-		return TypeInfo(self.name, indirection=self.indirection+1, arr=self.arr)
+		return TypeInfo(self.name, indirection=self.indirection+1, arr=self.arr, \
+				gen_args=self.gen_args)
 
 	def deref(self):
-		return TypeInfo(self.name, indirection=self.indirection-1, arr=self.arr)
+		return TypeInfo(self.name, indirection=self.indirection-1, arr=self.arr, \
+				gen_args=self.gen_args)
 
 	
 	def is_numeric(self):
@@ -39,11 +42,20 @@ class TypeInfo:
 	def __hash__(self):
 		return hash((self.name, self.indirection, self.arr))
 	
+	def gen_code(self):
+		stars = "*"*self.indirection
+		if len(self.arr):
+			arr_str = "".join([f"[]" for dim in self.arr])
+		else:
+			arr_str = ""
+
+		return f"{self.name}{stars}{arr_str}"
+	
 	
 	def __repr__(self):
 		stars = "*"*self.indirection
 		if len(self.arr):
-			arr_str = "".join([f"[{dim}]" for dim in self.arr])
+			arr_str = "".join([f"[]" for dim in self.arr])
 		else:
 			arr_str = ""
 
@@ -53,6 +65,13 @@ class TypeDefn:
 	def __init__(self, name, members):
 		self.name = name
 		self.members = members
+	
+	def __repr__(self):
+		return f"TypeDefn({self.name}{self.members})"
+	
+	def gen_code(self):
+		mems = [f"{v.gen_code()} {k}" for k, v in self.members.items()]
+		return f"typedef struct {{{'; '.join(mems)}}} {self.name};"
 
 class GenericTypeDefn:
 	def __init__(self, name, gen_args, members):
@@ -60,6 +79,23 @@ class GenericTypeDefn:
 		self.gen_args = gen_args
 		self.members = members
 		self.child_types = {}
+	
+	def concrete_type_def(self, gen_args):
+		gen_args = tuple(gen_args)
+		if gen_args in self.child_types:
+			return self.child_types[gen_args]
+		if len(gen_args) != len(self.gen_args):
+			raise TypeError("Invalid number of arguments for generic type {self.name}")
+		type_map = TypeMap({TypeInfo(a.text) : b for a, b in zip(self.gen_args, gen_args)})
+		print("mems", self.members, type_map.dict)
+
+		conc_mems = {n : type_map[t] for n, t in self.members.items()}
+		
+		
+		defn = TypeDefn(f"{self.name}_{len(self.child_types)}", conc_mems)
+		print(defn)
+		self.child_types[gen_args] = defn
+		return defn
 
 
 class Root:
@@ -83,6 +119,15 @@ class Root:
 	def add_var(self, var_name):
 		self.vars[-1].add(var_name)
 	
+	def lookup_type_by_name(self, name):
+		impls = [gen.child_types for gen in self.generic_types.values()]
+
+		all_types = {}
+		for i in impls:
+			all_types.update(i)
+		
+		print("ALL", all_types)
+
 	def register_generic_func(self, generic):
 		pass
 
@@ -110,6 +155,20 @@ class GenericFuncDefn:
 		self.args = args
 		self.return_type = return_type
 		self.statements = statements
+		self.impls = {}
+	
+	def make_concrete_func(self, gen_args):
+		type_map = TypeMap({a : b for a, b in zip(self.gen_args, gen_args)})
+		new_args = {k : type_map[v] for k, v in self.args.items()}
+		return_type = TypeMap[self.return_type]
+
+		new_statements = deepcopy(statements)
+
+		new_statements.substitute_types(type_map)
+
+		defn = FuncDefn(self.name, new_args, return_type, new_statements)
+		self.impls[gen_args] = defn
+		return defn
 
 
 class FuncDefn:
@@ -121,15 +180,23 @@ class FuncDefn:
 		self.statements = statements
 		self.id = FuncDefn._id
 		FuncDefn._id += 1
+		self.c_name = f"{self.name}_SUI{self.id}"
 	
 	def check_types(self, root):
-		scopes = ChainMap(self.args)
+		scopes = ChainMap(self.args.copy())
 		#these next two lines are awful but it gets the job done
 		scopes.func = self
 		scopes.root = root
-
-		for s in self.statements:
-			s.check_types(scopes)
+		self.statements.check_types(scopes)
+		
+	
+	def gen_code(self):
+		if self.name == "main":
+			self.id = ""
+		args = [f"{v.gen_code()} {k}" for k, v in self.args.items()]
+		print("IN GEN_CODE", args)
+		top = f"{self.return_type.gen_code()} {self.name}{self.id} ({','.join(args)})"
+		return top + self.statements.gen_code()
 
 #statements
 
@@ -152,6 +219,14 @@ class DeclAssignment:
 
 		else:
 			self.type_info = self.expr.type_info
+
+		scopes[self.var] = self.type_info
+	
+	def __repr__(self):
+		return f"{self.var}:= {self.expr}"
+	
+	def gen_code(self):
+		return f"{self.type_info.gen_code()} {self.var} = {self.expr.gen_code()};" + "\n"
 
 class WhileLoop:
 	def __init__(self, cond, statement):
@@ -242,6 +317,12 @@ class ReturnStmt:
 		self.expr.check_types(scopes)
 		if self.expr.type_info != scopes.func.return_type:
 			raise TypeError(f"Incorrect return type in {func}")
+	
+	def gen_code(self):
+		if self.expr:
+			return f"return {self.expr.gen_code()};"
+		else:
+			return "return;"
 
 
 class Block:
@@ -253,8 +334,12 @@ class Block:
 			s.substitute(type_map)
 	
 	def check_types(self, scopes):
-		for s in statements:
-			s.substitute(scopes)
+		for s in self.statements:
+			s.check_types(scopes)
+	
+	def gen_code(self):
+		statements = [s.gen_code() for s in self.statements]
+		return f"{{ {''.join(statements)} }}"
 	
 class ExprAsStatement:
 	def __init__(self, expr):
@@ -507,6 +592,10 @@ class LiteralExpr:
 	
 	def __repr__(self):
 		return f"{self.tok.text}"
+	
+	def gen_code(self):
+		print("LITERAL GEN", self.tok.text)
+		return self.tok.text
 
 class VariableExpr:
 	def __init__(self, tok):
@@ -522,7 +611,7 @@ class VariableExpr:
 		return f"Variable({self.tok.text})"
 
 	def gen_code(self, tabs=0):
-		f"{'    '*tabs}{self.tok.text}"
+		return f"{'    '*tabs}{self.tok.text}"
 
 class ArrayAccessExpr:
 	def __init__(self, expr, idx):
@@ -534,27 +623,21 @@ class ArrayAccessExpr:
 		
 	def check_types(self, scopes):
 		self.expr.check_types(scopes)
-		if self.expr.type_info.arrs == ():
+		if self.expr.type_info.arr == ():
 			raise TypeError(f"Cannot index type {self.expr.type_info}")
 
-		if len(self.idxs) == len(self.expr.arr):
-			self.type_info = TypeInfo(self.expr.type_info.name, \
-								self.expr.type_info.indirection, \
-								arrs=self.expr.type_info.arrs[:-1])
+		self.type_info = TypeInfo(self.expr.type_info.name, \
+							self.expr.type_info.indirection, \
+							arr=self.expr.type_info.arr[:-1])
 
-		else:
-			raise Exception() #this shouldn't be an error, but right now it is
 	
 	def gen_code(self, tabs=0):
-		pass
+		print(self.idx.gen_code)
+		return f"{self.expr.gen_code()}[{self.idx.gen_code()}]"
 		
 
-
-
-
-
 	def __repr__(self):
-		return f"ArrayAccess({self.expr}{self.idxs})"
+		return f"ArrayAccess({self.expr}{self.idx})"
 
 class CompoundLiteralExpr:
 	def __init__(self, type_info, members):
@@ -567,25 +650,91 @@ class CompoundLiteralExpr:
 	def check_types(self, scopes):
 		for m in self.members:
 			m.check_types(scopes)
+		
+		if self.type_info.indirection or self.type_info.arr != ():
+			raise TypeError(f"Can't make literal of type {self.type_info}")
+		
+		if self.type_info.name in scopes.root.generic_types:
+			print(self.type_info)
+			return
+		else:
+			defn_members = scopes.root.concrete_types[self.type_info.name].members
+			print(defn_members)
 
-		if len(self.members) != len(self.type_info.members):
+		if len(self.members) != len(defn_members):
 			raise TypeError("Invalid number of members for type {self.type_info}")
+	
 
 
 	def __repr__(self):
 		return f"CompoundLiteral({self.type_info.name}: {self.members})"
+	
+	def gen_code(self):
+		mems = [m.gen_code() for m in self.members]
+		return f"{{ {','.join(mems)} }}"
 
 
 class ArrayLiteralExpr:
 	def __init__(self, type_info, members):
-		self.type_info = type_info
+		self.dec_type_info = type_info
 		self.members = members
 
 	def substitute(self, type_map):
 		self.type_info = type_map[self.type_info]
 	
+	def check_types(self, scopes):
+		for m in self.members:
+			m.check_types(scopes)
+			if m.type_info != self.dec_type_info:
+				raise TypeError(f"Wrong type for array literal in expr {m}")
+
+		name = self.dec_type_info.name
+		arr = *self.dec_type_info.arr, -1
+
+		self.type_info = TypeInfo(name, arr=arr)
+
+
+		
+	
 	def _repr__(self):
 		return f"ArrayLiteral({self.type_info.name}: {self.members})"
+
+	def gen_code(self):
+		mems = [m.gen_code() for m in self.members]
+		return f"{{ {','.join(mems)} }}"
+
+class FunctionCallExpr:
+	def __init__(self, func_defn, args):
+		self.func_defn = func_defn
+		self.args = args
+	
+	def substitute(self, type_map):
+		for a in self.args:
+			a.substitute(type_map)
+	
+	def check_types(self, scopes):
+		for a in self.args:
+			a.check_types(scopes)
+		
+
+
+class GenericFunctionCallExpr:
+	def __init__(self, func_defn, gen_args, args):
+		self.func_defn = func_defn
+		self.gen_args = gen_args
+		self.args = args
+	
+	def substitute(self, type_map):
+		self.gen_args = [type_map[ga] for ga in self.gen_args]
+		for a in self.args:
+			a.substitute(type_map)
+
+	def check_types(self, scopes):
+		for a in self.args:
+			a.check_types(scopes)
+
+
+
 
 
 

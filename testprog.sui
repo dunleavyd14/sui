@@ -30,18 +30,20 @@ func ovl (a : float) int {
 	return 1;
 }
 
-func main (argc : int, argv : *byte[]) int {
+func main (argc : int, argv : **byte) int {
 	str := "this is a string";
 	hex := 0xFFFF_00ab;
 	bin := 0b00_00_11_11;
 	flo := 0.00f;
-	fl2 := 1f;
+	fl2 := 1.f;
 	dou := 0.0;
 	do2 := 1.0;
 	vec := {Vector: 1, 2, 3};
-	ints := [int[]: 1, 2, 3];
+	ints := [int: 1, 2, 3];
+
+	typ := {Tuple<int, int, int>: 1, 2, 3};
 	a := ints[1];
-	oth := ovl;
+	//oth := ovl(1);
 	
 	//fstr := f"{str} middle string {hex}";
 	return 0; //this is a comment

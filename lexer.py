@@ -322,6 +322,7 @@ class Lexer:
 		else:
 			while self.peek() in string.digits + "_.uf":
 				if self.peek() == "." and self.peek(offset=1) == ".":
+					chars = "".join([c for c in chars if c != "_"])
 					return self.make_token(tok_type, chars)
 				if self.peek() == ".":
 					if seen_dot:
@@ -336,26 +337,34 @@ class Lexer:
 				elif self.peek() == "f":
 					tok_type = TokenType.FLOAT_LITERAL
 					chars += self.eat()
+					chars = "".join([c for c in chars if c != "_"])
 					return self.make_token(tok_type, chars)
 				elif self.peek() == "u":
 					tok_type = TokenType.UINT_LITERAL
 					if seen_dot:
 						self.error(f"Uint literal cannot contain decimal point")
 					chars += self.eat()
+					chars = "".join([c for c in chars if c != "_"])
 					return self.make_token(tok_type, chars)
 				else:
 					self.error(f"Unexpected character in numeric literal")
+
+			chars = "".join([c for c in chars if c != "_"])
 			return self.make_token(tok_type, chars)
 
 
 	def binary_literal(self, chars):
 		while self.peek() in "01_":
 			chars += self.eat()
+
+		chars = "".join([c for c in chars if c != "_"])
 		return self.make_token(TokenType.BINARY_LITERAL, chars)
 
 	def hex_literal(self, chars):
 		while self.peek() in string.hexdigits + "_":
 			chars += self.eat()
+		
+		chars = "".join([c for c in chars if c != "_"])
 		return self.make_token(TokenType.HEX_LITERAL, chars)
 
 
