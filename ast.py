@@ -744,6 +744,7 @@ class GenericFunctionCallExpr:
 		for a in self.args:
 			a.check_types(scopes)
 		self.func_defn = self.func_defn.make_concrete_func(self.gen_args)
+		self.func_defn.check_types(scopes)
 
 		self.type_info = self.func_defn.return_type
 	
