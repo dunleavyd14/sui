@@ -6,7 +6,6 @@ type Vector { //normal type
 }
 
 type Tuple <A, B, C> {//generic type
-
 	a : A;
 	b : B;
 	c : C;
@@ -16,7 +15,7 @@ func add <T> (a : T, b : T) T { //generic function
 	return a + b;
 }
 
-func sum (a : Tuple<int, int, int>) int {
+func sum (a : Tuple<int, int, int>) int {//overload with generic type
 	return a.a + a.b + a.c;
 }
 
@@ -35,10 +34,10 @@ func main (argc : int, argv : **byte) int {
 	printf("Tuple sum: %d \n", sum(tup));
 	
 	for i in 0..15 {
-		if ((i % 3) == 0) {
+		if i % 3 == 0 {
 			printf("fizz");
 		}
-		if ((i % 5) == 0) {
+		if i % 5 == 0 {
 			printf("buzz");
 		}
 		printf("%d \n", i);
