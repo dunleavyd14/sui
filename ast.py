@@ -253,8 +253,8 @@ class ForLoop:
 		self.statement.substitute(type_map)
 	
 	def check_types(self, scopes):
-		self.start.check_types()
-		self.end.check_types()
+		self.start.check_types(scopes)
+		self.end.check_types(scopes)
 
 		if self.start.type_info != self.end.type_info:
 			raise TypeError(f"For loop bounds must be of same type")
@@ -269,6 +269,10 @@ class ForLoop:
 		scopes = scopes.new_child(m={self.name : self.start.type_info})
 		self.statement.check_types(scopes)
 	
+	def gen_code(self):
+		var_type = self.start.type_info.gen_code()
+		name = self.name
+		return f"for ({var_type} {name} = {self.start.gen_code()}; {name} < {self.end.gen_code()}; {name}++) {self.statement.gen_code()}"
 
 class IfStmt:
 	def __init__(self, cond, statement, else_stmt=None):
@@ -291,6 +295,9 @@ class IfStmt:
 		self.statement.check_types(scopes)
 		if self.else_stmt:
 			self.else_stmt.check_types(scopes)
+	
+	def gen_code(self):
+		return f"if ({self.cond.gen_code()}) {self.statement.gen_code()} \n"
 
 
 class ReturnStmt:

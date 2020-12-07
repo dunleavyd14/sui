@@ -206,6 +206,7 @@ class Lexer:
 
 		elif char == "=":
 			if self.peek() == "=":
+				self.eat()
 				char += "="
 				return self.make_token(TokenType.DOUBLE_EQUALS, char)
 			return self.make_token(TokenType.EQUALS, char)

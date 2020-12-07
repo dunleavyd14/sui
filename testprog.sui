@@ -34,6 +34,16 @@ func main (argc : int, argv : **byte) int {
 	printf("Vector sum: %d \n", sum(vec));
 	printf("Tuple sum: %d \n", sum(tup));
 	
+	for i in 0..15 {
+		if ((i % 3) == 0) {
+			printf("fizz");
+		}
+		if ((i % 5) == 0) {
+			printf("buzz");
+		}
+		printf("%d \n", i);
+	}
+	
 	return 0;
 }
 

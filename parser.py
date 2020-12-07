@@ -2,6 +2,7 @@ import ast
 from lexer import TokenType as T
 from lexer import Token, Lexer
 from colors import color
+import os
 
 class UnreachableException(Exception):
 	pass
@@ -32,7 +33,7 @@ class Parser:
 		fname = color(f"{self.fname}", "green")
 		tok = self.eat()
 		print(f"[{fname} {tok.line_no}:{tok.char_no}] {msg}")
-		exit()
+		os._exit(1)
 
 	def peek(self, lookahead=0):
 		if len(self.tokens) <= self._tok_idx + lookahead:
@@ -257,7 +258,8 @@ class Parser:
 
 	def for_loop(self):
 		self.expect(T.FOR)
-		name = self.expect(T.IDENTIFIER)
+		name = self.expect(T.IDENTIFIER).text
+		self.root.add_var(name)
 		self.expect(T.IN)
 		start = self.expr()
 		self.expect(T.PERIOD)
@@ -308,6 +310,13 @@ class Parser:
 			expr = self.expr()
 			self.root.add_var(var_name)
 			return ast.DeclAssignment(var_name, expr, decl_type=declared_type)
+	
+	def if_statement(self):
+		self.expect(T.IF)
+		cond = self.expr()
+		stmt = self.statement()
+
+		return ast.IfStmt(cond, stmt)
 	
 	def assign(self):
 		#get lvalue
@@ -368,9 +377,8 @@ class Parser:
 
 	def equality(self):
 		lexpr = self.comparison()
-
-		while self.peek().type == [T.NOT_EQUALS, T.DOUBLE_EQUALS]:
-			op, _  = self.eat(), self.eat()
+		while self.peek().type in [T.NOT_EQUALS, T.DOUBLE_EQUALS]:
+			op = self.eat().text
 
 			rexpr = self.comparison()
 			lexpr = ast.NumericalComparisonExpr(lexpr, op, rexpr)
@@ -418,7 +426,6 @@ class Parser:
 			op = self.eat()
 			rexpr = self.unary()
 			lexpr = ast.MathBinExpr(lexpr, op, rexpr)
-
 		return lexpr
 
 	def unary(self):
@@ -581,6 +588,8 @@ class Parser:
 			return self.block()
 		elif tok_type == T.RETURN:
 			return self.return_statement()
+		elif tok_type == T.IF:
+			return self.if_statement()
 		else:
 			expr = self.expr()
 			self.expect(T.SEMICOLON)
